@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | ![](docs/panel.png) | ![](docs/device-ui.png) | 悬浮面板 + 240×240 设备界面 |
 
-演示视频：[Releases](https://github.com/teddywuinfo/xiao-ling-dictate/releases) 里的 `demo.mp4`
+演示视频：[Releases](https://github.com/teddywuinfo/xiao-ling-dictate/releases) 里的 `xiaoling-dictate-demo.mp4`
 
 ## 架构
 
