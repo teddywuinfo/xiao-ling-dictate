@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# 模型（用 tools/download_models.ps1 获取）
+voice-input/models/sensevoice/
+voice-input/models/*.onnx
+!voice-input/models/README.md
+
+# 本地配置与日志
+voice-input/config.json
+voice-input/logs/
+voice-input/*.log
+
+# 测试产物
+voice-input/tools/*.txt
+voice-input/tools/*.wav
+voice-input/tools/*.npy
+
+# 构建产物
+firmware/build*/
+*.bin
+*.hex
+
+# 系统
+.DS_Store
+Thumbs.db

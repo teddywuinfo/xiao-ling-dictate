@@ -1,0 +1,93 @@
+﻿diff --git a/adb_download.ps1 b/adb_download.ps1
+index aafaaba2..ad727c70 100644
+--- a/adb_download.ps1
++++ b/adb_download.ps1
+@@ -687,7 +687,7 @@ function Flash-OneDevice {
+ 
+     if ($script:FlashMode -eq "boot") {
+         Write-Host "[$display] running upgrade preparation command"
+-        & $script:AdbCmd @selectorArgs shell $UpgradeEnterCmd >$null
++        & $script:AdbCmd @selectorArgs shell $UpgradeEnterCmd >$null 2>$null
+         if ($LASTEXITCODE -ne 0) {
+             Write-Fail "[$display] upgrade preparation failed"
+             return 1
+@@ -699,7 +699,10 @@ function Flash-OneDevice {
+         $remotePath = $script:RemotePaths[$i]
+ 
+         Write-Host "[$display] push $localPath -> $remotePath"
+-        & $script:AdbCmd @selectorArgs push $localPath $remotePath >$null
++        # 2>$null 必须保留：Windows PowerShell 5.1 会把 adb 往 stderr 打的进度当成错误，
++        # 配合脚本顶部的 $ErrorActionPreference = "Stop" 会在 push 完成后直接中断，
++        # 导致验证和正常重启都被跳过（app 分区可能停在未写完的状态）。
++        & $script:AdbCmd @selectorArgs push $localPath $remotePath >$null 2>$null
+         if ($LASTEXITCODE -ne 0) {
+             Write-Fail "[$display] push failed: $localPath"
+             return 1
+diff --git a/src/server/lschat_server/CMakeLists.txt b/src/server/lschat_server/CMakeLists.txt
+index 67ab0a3c..6b8d9749 100644
+--- a/src/server/lschat_server/CMakeLists.txt
++++ b/src/server/lschat_server/CMakeLists.txt
+@@ -8,6 +8,8 @@ listenai_library_sources(
+     mcp_tool_kuwo_music.c
+     mcp_tool_play_ctrl.c
+     voice_cloud.c
++    dictate_bridge.c
++    dictate_app.c
+     voice_img_upload.c
+     mcp_tool_version_info.c
+ )
+diff --git a/src/server/lschat_server/voice_cloud.c b/src/server/lschat_server/voice_cloud.c
+index 76136eee..dbce052a 100644
+--- a/src/server/lschat_server/voice_cloud.c
++++ b/src/server/lschat_server/voice_cloud.c
+@@ -34,6 +34,23 @@
+ #include "project_version.h"
+ #include "sys_network_manager.h"
+ #include "sysutils.h"
++#include "dictate_bridge.h"
++#include "dictate_app.h"
++
++/* 无线听写：缓存最近一次识别文本，在识别结束时发给电脑端 */
++#define VOICE_DICTATE_IAT_MAX 512
++static char s_dictate_iat[VOICE_DICTATE_IAT_MAX];
++static bool s_dictate_iat_pending;
++
++static void voice_dictate_flush_iat(void)
++{
++    if (!s_dictate_iat_pending) {
++        return;
++    }
++    s_dictate_iat_pending = false;
++    dictate_bridge_send_text(s_dictate_iat);
++    s_dictate_iat[0] = '\0';
++}
+ 
+ 
+ /*缓存500ms的音频*/
+@@ -1219,6 +1236,7 @@ static void voice_event_cb(session_voice_event_e evt, void *data, uint32_t size,
+         g_voice_session_active = 0;
+         g_wait_wakeup_tone = 0;
+         voice_pcm_send_disable();
++        voice_dictate_flush_iat();
+         voice_msg_pub(VOICE_MSG_CLOUD_SESSION_FINISHED, NULL, 0);
+         break;
+     case SESSION_VOICE_TTS:
+@@ -1236,6 +1254,10 @@ static void voice_event_cb(session_voice_event_e evt, void *data, uint32_t size,
+         break;
+     case SESSION_VOICE_IAT:
+         if (data != NULL && size > 0 && ((char *)data)[0] != '\0') {
++            dictate_app_handle_text((const char *)data);
++            strncpy(s_dictate_iat, (const char *)data, sizeof(s_dictate_iat) - 1U);
++            s_dictate_iat[sizeof(s_dictate_iat) - 1U] = '\0';
++            s_dictate_iat_pending = true;
+             voice_msg_pub(VOICE_MSG_CLOUD_IAT_UPDATE, (char *)data, size);
+         }
+         break;
+@@ -1243,6 +1265,7 @@ static void voice_event_cb(session_voice_event_e evt, void *data, uint32_t size,
+         voice_msg_pub(VOICE_MSG_CLOUD_IAT_START, NULL, 0);
+         break;
+     case SESSION_VOICE_IAT_END:
++        voice_dictate_flush_iat();
+         voice_msg_pub(VOICE_MSG_CLOUD_IAT_END, NULL, 0);
+         break;
+     case SESSION_VOICE_GOT_VAD:
